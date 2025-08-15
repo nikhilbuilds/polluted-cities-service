@@ -284,17 +284,23 @@ curl "http://localhost:3000/api/v1/health"
 7. **Search Suggestions**: Autocomplete for city names
 8. **Advanced Filters**: Pollution range, population size, climate data
 
+### Performance & Scalability
+
+9. **Redis Implementation**: Replace in-memory cache with Redis for persistence and distributed caching
+10. **Database Integration**: PostgreSQL/MongoDB for persistent storage
+11. **Horizontal Scaling**: Multi-instance deployment with shared Redis cache
+
 ### Monitoring & Observability
 
-9. **Add Proper Monitoring and Logging**: Structured logging with correlation IDs
-10. **Implement Comprehensive ErrorBoundaries**: Better error tracking and reporting
+12. **Add Proper Monitoring and Logging**: Structured logging with correlation IDs
+13. **Implement Comprehensive ErrorBoundaries**: Better error tracking and reporting
 
 ### Resilience & Reliability
 
-11. **Add Error Recovery Mechanisms**: Automatic retry and fallback strategies
-12. **Circuit Breaker Pattern**: Prevent cascading failures to external APIs
-13. **Fallback Mechanisms**: Graceful degradation when external services are unavailable
+14. **Add Error Recovery Mechanisms**: Automatic retry and fallback strategies
+15. **Circuit Breaker Pattern**: Prevent cascading failures to external APIs
+16. **Fallback Mechanisms**: Graceful degradation when external services are unavailable
 
 ### Internationalization
 
-14. **Multi-language Support**: City descriptions in multiple languages
+17. **Multi-language Support**: City descriptions in multiple languages
