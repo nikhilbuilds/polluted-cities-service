@@ -1,6 +1,6 @@
 # BookingGuru Cities API
 
-A high-performance REST API that integrates pollution data with Wikipedia descriptions to return the most polluted cities by country. Features intelligent caching, rate limiting, and robust city name normalization.
+A high-performance REST API that integrates pollution data with Wikipedia descriptions to return the most polluted cities by country. Features intelligent caching, rate limiting, robust city name normalization, and efficient pagination.
 
 ## 🚀 Quick Start
 
@@ -24,7 +24,7 @@ Server runs on `http://localhost:3000` (or `PORT` environment variable)
 
 **`GET /api/v1/cities`**
 
-Retrieves the most polluted cities for a specified country with Wikipedia descriptions.
+Retrieves the most polluted cities for a specified country with Wikipedia descriptions, supporting pagination for efficient data retrieval.
 
 #### Query Parameters
 
@@ -32,35 +32,38 @@ Retrieves the most polluted cities for a specified country with Wikipedia descri
 | --------- | ------ | -------- | ------------------------------------ | ------- | --- |
 | `country` | string | ✅       | Country code: `PL`, `DE`, `ES`, `FR` | -       | -   |
 | `limit`   | number | ❌       | Number of cities to return           | 10      | 50  |
+| `page`    | number | ❌       | Page number for pagination           | 1       | -   |
 
 #### Response
 
 ```json
 {
-  "country": "ES",
-  "limit": 3,
-  "results": [
+  "page": 1,
+  "limit": 2,
+  "hasMore": true,
+  "cities": [
     {
-      "country": "ES",
-      "city": "Barcelona",
-      "pollution": 89.5,
-      "description": "Barcelona is a city on the coast of northeastern Spain..."
+      "name": "Madrid",
+      "country": "Spain",
+      "pollution": 52.9,
+      "description": "Madrid is the capital and most populous municipality of Spain. It has almost 3.5 million inhabitants and a metropolitan area population of approximately 7 million."
     },
     {
-      "country": "ES",
-      "city": "Madrid",
-      "pollution": 87.2,
-      "description": "Madrid is the capital and most populous city of Spain..."
-    },
-    {
-      "country": "ES",
-      "city": "Valencia",
-      "pollution": 82.1,
-      "description": "Valencia is the capital of the autonomous community of Valencia..."
+      "name": "Barcelona",
+      "country": "Spain",
+      "pollution": 51.1,
+      "description": "Barcelona is a city on the northeastern coast of Spain. It is the capital and largest city of the autonomous community of Catalonia, as well as the second-most populous municipality of Spain."
     }
   ]
 }
 ```
+
+#### Pagination Response Fields
+
+- **`page`**: Current page number (1-based indexing)
+- **`limit`**: Number of cities returned in this response
+- **`hasMore`**: Boolean indicating if more pages are available
+- **`cities`**: Array of city objects for the current page
 
 #### Error Responses
 
@@ -68,6 +71,11 @@ Retrieves the most polluted cities for a specified country with Wikipedia descri
 // Invalid country
 {
   "error": "Invalid or missing country. Use one of: PL, DE, ES, FR"
+}
+
+// Invalid page number
+{
+  "error": "Page must be 1 or greater"
 }
 
 // Rate limit exceeded
@@ -242,19 +250,28 @@ if (verdict.reason === "disambiguation") {
 
 ### Smart Pagination Strategy
 
+The API implements efficient pagination that leverages the progressive caching system:
+
 ```javascript
-// First request: limit=10
-GET /api/v1/cities?country=ES&limit=10
-// → Fetches pages 1-2, caches ~20 cities, returns top 10
+// First request: page 1, limit 10
+GET /api/v1/cities?country=ES&limit=10&page=1
+// → Fetches pages 1-2, caches ~20 cities, returns first 10
 
-// Second request: limit=20
-GET /api/v1/cities?country=ES&limit=20
-// → Uses cached 20 cities, no API calls needed
+// Second request: page 2, limit 10
+GET /api/v1/cities?country=ES&limit=10&page=2
+// → Uses cached 20 cities, returns next 10, no API calls needed
 
-// Third request: limit=30
-GET /api/v1/cities?country=ES&limit=30
+// Third request: page 3, limit 10
+GET /api/v1/cities?country=ES&limit=10&page=3
 // → Uses cached 20, fetches additional pages for remaining 10
 ```
+
+**Pagination Benefits:**
+
+- **Efficient data retrieval**: Only fetch what's needed
+- **Cache optimization**: Progressive caching builds up data over time
+- **Rate limit friendly**: Minimizes external API calls
+- **User experience**: Fast responses for previously accessed data
 
 ### Rate Limiting & Retry Logic
 
@@ -317,15 +334,19 @@ console.log(stats);
 - API rate limiting events
 - Wikipedia disambiguation handling
 - City classification decisions
+- Pagination performance metrics
 
 ## 🧪 Example Usage
 
 ```bash
-# Get top 5 polluted cities in Poland
-curl "http://localhost:3000/api/v1/cities?country=PL&limit=5"
+# Get first page of 5 cities in Poland
+curl "http://localhost:3000/api/v1/cities?country=PL&limit=5&page=1"
 
-# Get top 20 polluted cities in Germany
-curl "http://localhost:3000/api/v1/cities?country=DE&limit=20"
+# Get second page of 5 cities in Poland
+curl "http://localhost:3000/api/v1/cities?country=PL&limit=5&page=2"
+
+# Get first page of 20 cities in Germany
+curl "http://localhost:3000/api/v1/cities?country=DE&limit=20&page=1"
 
 # Health check
 curl "http://localhost:3000/api/v1/health"
@@ -348,6 +369,7 @@ curl "http://localhost:3000/api/v1/health"
 - **Rate limits**: Bound by external API constraints (5 req/10s for pollution data)
 - **Language**: Wikipedia descriptions are in English only
 - **Data freshness**: Pollution data cached for 5 minutes, descriptions for 24 hours
+- **Pagination**: Page-based pagination with `hasMore` indicator
 
 ## 🚀 Performance Characteristics
 
@@ -356,6 +378,7 @@ curl "http://localhost:3000/api/v1/health"
 - **Memory usage**: ~10-50MB depending on cache size
 - **Throughput**: Limited by external API rate limits, not application performance
 - **Scalability**: Stateless design allows horizontal scaling (shared cache needed)
+- **Pagination performance**: Subsequent pages served from cache for optimal speed
 
 ## 🔮 Future Enhancements
 

@@ -4,6 +4,7 @@ import {
   SUPPORTED_COUNTRIES,
   SupportedCountry,
   API_LIMITS,
+  COUNTRY_LABELS,
 } from "../utils/constants";
 
 export class CityController {
@@ -24,13 +25,30 @@ export class CityController {
       const limit = req.query.limit
         ? Number(req.query.limit)
         : API_LIMITS.DEFAULT_CITY_LIMIT;
+      const page = req.query.page ? Number(req.query.page) : 1;
 
-      const data = await this.service.getMostPollutedByCountry(
+      // Validate page and limit
+      if (page < 1) {
+        return res.status(400).json({ error: "Page must be 1 or greater" });
+      }
+
+      const result = await this.service.getMostPollutedByCountry(
         country as SupportedCountry,
-        isNaN(limit) ? API_LIMITS.DEFAULT_CITY_LIMIT : limit
+        isNaN(limit) ? API_LIMITS.DEFAULT_CITY_LIMIT : limit,
+        isNaN(page) ? 1 : page
       );
 
-      res.json({ country, limit: data.length, results: data });
+      res.json({
+        page,
+        limit: result.cities.length,
+        hasMore: result.hasMore,
+        cities: result.cities.map((city) => ({
+          name: city.city,
+          country: COUNTRY_LABELS[country as SupportedCountry],
+          pollution: city.pollution,
+          description: city.description,
+        })),
+      });
     } catch (err) {
       console.error(err);
       next(err);

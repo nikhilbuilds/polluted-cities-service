@@ -25,67 +25,65 @@ export class CityService {
   ) {}
 
   async getMostPollutedByCountry(
-    country: SupportedCountry,
-    limit = API_LIMITS.DEFAULT_CITY_LIMIT as number
-  ): Promise<CityResult[]> {
-    // Validate limit using constants
-    limit = Math.max(
-      API_LIMITS.MIN_CITY_LIMIT,
-      Math.min(limit, API_LIMITS.MAX_CITY_LIMIT)
-    );
+    country: CityResult["country"],
+    limit = 10,
+    page = 1
+  ): Promise<{ cities: CityResult[]; hasMore: boolean }> {
+    const offset = (page - 1) * limit;
+    const want = Math.max(1, Math.min(limit, 50));
 
     // Get from cache service
     const cacheEntry = cacheService.getCountryCache(country);
 
-    if (cacheEntry && cacheEntry.cities.length >= limit) {
+    // Check if we have enough cached data for this page
+    if (cacheEntry && cacheEntry.cities.length >= offset + want) {
+      const startIndex = offset;
+      const endIndex = offset + want;
+
       console.log(
-        `Cache hit: returning ${limit}/${cacheEntry.cities.length} cached cities for ${country}`
+        `Cache hit: returning page ${page} (${startIndex}-${endIndex}) from ${cacheEntry.cities.length} cached cities`
       );
-      return cacheEntry.cities
-        .sort((a, b) => b.pollution - a.pollution)
-        .slice(0, limit);
+
+      return {
+        cities: cacheEntry.cities
+          .sort((a, b) => b.pollution - a.pollution)
+          .slice(startIndex, endIndex),
+        hasMore: endIndex < cacheEntry.cities.length,
+      };
     }
 
-    // Check if cache is complete but has fewer cities than requested
-    if (cacheEntry?.isComplete && cacheEntry.cities.length < limit) {
-      console.log(
-        `Cache complete but only ${cacheEntry.cities.length} cities available for ${country} (requested ${limit})`
-      );
-      return cacheEntry.cities.sort((a, b) => b.pollution - a.pollution);
-    }
-
+    // Calculate how many cities we need to fetch
+    const neededCities = offset + want;
     const alreadyHave = cacheEntry?.cities.length || 0;
-    const needMore = limit - alreadyHave;
+    const needMore = Math.max(0, neededCities - alreadyHave);
 
     if (alreadyHave > 0) {
       console.log(
-        `Partial cache hit: have ${alreadyHave}, need ${needMore} more cities for ${country}`
+        `Partial cache hit: have ${alreadyHave}, need ${needMore} more cities for page ${page}`
       );
     } else {
       console.log(
-        `Cache miss: fetching fresh data for ${country} cities (${limit} requested)`
+        `Cache miss: fetching fresh data for ${country} cities (page ${page}, ${want} requested)`
       );
     }
 
     const chosen: CityResult[] = cacheEntry ? [...cacheEntry.cities] : [];
     const seen = new Set<string>(chosen.map((c) => cityKey(c.city, c.country)));
 
-    let page = cacheEntry ? cacheEntry.lastPage + 1 : 1;
+    let currentPage = cacheEntry ? cacheEntry.lastPage + 1 : 1;
     let totalPages: number | null = cacheEntry?.totalPages || null;
 
-    // Keep pulling until we have enough or pages are exhausted
-    while (chosen.length < limit) {
-      if (totalPages && page > totalPages) {
-        console.log(
-          `Reached end of pages (${totalPages}) for ${country}. Have ${chosen.length}, wanted ${limit}`
-        );
+    // Keep pulling until we have enough for the requested page
+    while (chosen.length < neededCities) {
+      if (totalPages && currentPage > totalPages) {
+        console.log(`Reached end of pages (${totalPages}) for ${country}`);
         break;
       }
 
       const resp = await this.pollu.fetchCountryPage(
         country,
-        page,
-        Math.max(1, 50)
+        currentPage,
+        Math.max(1, 50) // Always fetch max to build better cache
       );
 
       totalPages = totalPages ?? resp.meta?.totalPages ?? 1;
@@ -135,11 +133,11 @@ export class CityService {
       }
 
       if (batch.length === 0) {
-        if (page >= (totalPages ?? 1)) {
+        if (currentPage >= (totalPages ?? 1)) {
           // Mark as complete - merge with existing cache
           const updatedCacheData = {
             cities: chosen, // All cities we have so far
-            lastPage: page - 1,
+            lastPage: currentPage - 1,
             totalPages,
             timestamp: Date.now(),
             isComplete: true,
@@ -150,7 +148,7 @@ export class CityService {
           );
           break;
         }
-        page++;
+        currentPage++;
         continue;
       }
 
@@ -169,35 +167,37 @@ export class CityService {
 
       chosen.push(...newCities);
 
-      // Update cache with ALL cities accumulated so far
-      const isComplete = page >= (totalPages ?? 1);
+      // Update cache with new cities from this page
+      const isComplete = currentPage >= (totalPages ?? 1);
       const updatedCacheData = {
         cities: chosen, // All cities accumulated so far
-        lastPage: page,
+        lastPage: currentPage,
         totalPages,
         timestamp: Date.now(),
         isComplete,
       };
       cacheService.setCountryCache(country, updatedCacheData);
 
-      console.log(
-        `Page ${page}: Added ${newCities.length} new cities. Total: ${chosen.length}/${limit}`
-      );
-
-      if (page >= (totalPages ?? 1)) break;
-      page++;
+      if (currentPage >= (totalPages ?? 1)) break;
+      currentPage++;
     }
 
-    // Final ordering & trim
+    // Return paginated results
+    const startIndex = offset;
+    const endIndex = Math.min(offset + want, chosen.length);
+
     const result = chosen
       .sort((a, b) => b.pollution - a.pollution)
-      .slice(0, limit);
+      .slice(startIndex, endIndex);
 
     console.log(
-      `Returning ${result.length} cities for ${country} (${chosen.length} total in cache, requested ${limit})`
+      `Returning page ${page}: ${result.length} cities (${startIndex}-${endIndex} of ${chosen.length} total)`
     );
 
-    return result;
+    return {
+      cities: result,
+      hasMore: endIndex < chosen.length,
+    };
   }
 
   getCacheStats() {
