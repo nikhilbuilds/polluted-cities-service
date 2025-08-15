@@ -114,6 +114,75 @@ The application uses advanced heuristics to identify valid cities:
 - **Blacklist**: Filters out `unknown`, `n/a`, `test`, etc.
 - **Pollution data**: Must be finite, non-negative number
 
+#### Multi-Layer City Detection Strategy
+
+The application employs a sophisticated **4-layer validation system** to accurately identify cities:
+
+##### **Layer 1: Data Quality Filtering (First Pass)**
+
+Initial filtering removes obviously invalid entries:
+
+- **Length validation**: Must be 2-64 characters after normalization
+- **Character validation**: Only letters, spaces, hyphens, apostrophes, dots allowed
+- **Content validation**: Must contain letters, no digits
+- **Blacklist filtering**: Removes `unknown`, `n/a`, `test`, `lorem`, etc.
+- **Pollution data validation**: Must be finite, non-negative number
+
+##### **Layer 2: Intelligent Classification (Second Pass)**
+
+Sophisticated heuristics categorize entries using `cityFilter.ts`:
+
+```typescript
+const verdict = classify(
+  {
+    name: String(row?.name ?? ""),
+    pollution,
+  },
+  country
+);
+```
+
+**Classification Categories:**
+
+- **"keep"** - Clean, obvious city names (e.g., "Berlin", "Madrid")
+- **"salvage"** - Names that can be cleaned up (e.g., "Warsaw (Zone)" → "Warsaw")
+- **"reject"** - Non-city entities (facilities, districts, etc.)
+
+##### **Layer 3: Wikipedia Validation (Third Pass)**
+
+Authoritative validation using Wikipedia's API:
+
+```typescript
+function validatePageIsCity(p: QueryPage): { ok: boolean; reason: string } {
+  // Check categories for non-city indicators
+  if (cats.some((c) => CAT_DENY.some((rx) => rx.test(c))))
+    return { ok: false, reason: "deny-category" };
+
+  // Check intro text patterns
+  if (POS_INTRO.test(intro)) return { ok: true, reason: "intro-cityish" };
+  if (NEG_INTRO.test(intro)) return { ok: false, reason: "intro-noncity" };
+}
+```
+
+**Wikipedia Validation Checks:**
+
+- **Category analysis**: Filters out airports, districts, facilities, power plants
+- **Intro text patterns**: Looks for city-like descriptions vs. facility descriptions
+- **Page properties**: Checks for disambiguation pages
+- **Content validation**: Ensures page contains meaningful city information
+
+##### **Layer 4: Disambiguation Handling**
+
+Intelligent retry with country context for ambiguous names:
+
+```typescript
+if (verdict.reason === "disambiguation") {
+  const countryLabel = COUNTRY_LABEL[country];
+  const newInput = `${input}, ${countryLabel}`; // "Barcelona, Spain"
+  // Retry with country context for accurate validation
+}
+```
+
 #### Locale-Aware Name Processing
 
 - **Polish (PL)**: Preserves diacritics (ę, ź, ó), capitalizes all significant words
@@ -121,11 +190,34 @@ The application uses advanced heuristics to identify valid cities:
 - **Spanish (ES)**: Strips accents except ñ/ü, lowercase articles (`de`, `del`, `de la`)
 - **French (FR)**: Lowercase articles (`de`, `du`, `le`, `la`, `en`)
 
-#### Wikipedia Integration
+#### Example Decision Flow
 
-- Validates cities using categories and intro text patterns
-- Handles disambiguation with country context (`"Barcelona, Spain"`)
-- Filters out non-cities (airports, districts, facilities)
+```
+"Frankfurt am Main" →
+  ✅ Passes data quality filters →
+  ✅ Classified as "keep" →
+  ✅ Wikipedia validates as city →
+  ✅ Returns with description
+
+"Monitoring Station B" →
+  ❌ Fails data quality (contains digits) →
+  ❌ Rejected
+
+"Barcelona" →
+  ✅ Passes filters →
+  ✅ Wikipedia returns disambiguation →
+  🔄 Retries with "Barcelona, Spain" →
+  ✅ Validates as city
+```
+
+#### Key Strengths of This Approach
+
+1. **Defense in depth**: Multiple validation layers ensure high accuracy
+2. **Intelligent fallbacks**: Handles edge cases gracefully
+3. **Locale awareness**: Respects different naming conventions
+4. **External validation**: Uses Wikipedia as authoritative source
+5. **Graceful degradation**: Returns partial results if validation fails
+6. **Performance optimized**: Batch processing and intelligent caching
 
 ## 🚄 Performance & Caching
 
